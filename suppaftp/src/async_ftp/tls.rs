@@ -4,8 +4,8 @@
 
 use std::fmt::Debug;
 
-use async_std::io::{Read, Write};
-use async_std::net::TcpStream;
+use tokio::io::{AsyncRead as Read,AsyncWrite as Write, ReadBuf};
+use tokio::net::TcpStream;
 use async_trait::async_trait;
 
 use crate::FtpResult;
@@ -30,9 +30,6 @@ pub trait AsyncTlsConnector: Debug {
 pub trait AsyncTlsStream: Debug + Read + Write + Unpin {
     type InnerStream: Read + Write;
 
-    /// Get underlying tcp stream
-    fn tcp_stream(self) -> TcpStream;
-
     /// Get ref to underlying tcp stream
     fn get_ref(&self) -> &TcpStream;
 
@@ -47,8 +44,8 @@ impl Read for AsyncNoTlsStream {
     fn poll_read(
         self: std::pin::Pin<&mut Self>,
         _cx: &mut std::task::Context<'_>,
-        _buf: &mut [u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
+        _buf: &mut ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
         panic!()
     }
 }
@@ -69,7 +66,7 @@ impl Write for AsyncNoTlsStream {
         panic!()
     }
 
-    fn poll_close(
+    fn poll_shutdown(
         self: std::pin::Pin<&mut Self>,
         _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
@@ -79,10 +76,6 @@ impl Write for AsyncNoTlsStream {
 
 impl AsyncTlsStream for AsyncNoTlsStream {
     type InnerStream = TcpStream;
-
-    fn tcp_stream(self) -> TcpStream {
-        panic!()
-    }
 
     fn get_ref(&self) -> &TcpStream {
         panic!()

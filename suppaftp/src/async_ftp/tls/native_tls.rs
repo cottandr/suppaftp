@@ -5,8 +5,8 @@
 use std::pin::Pin;
 
 use async_native_tls::{TlsConnector, TlsStream};
-use async_std::io::{Read, Write};
-use async_std::net::TcpStream;
+use tokio::io::{AsyncRead as Read,AsyncWrite as Write, ReadBuf};
+use tokio::net::TcpStream;
 use async_trait::async_trait;
 use pin_project::pin_project;
 
@@ -55,8 +55,8 @@ impl Read for AsyncNativeTlsStream {
     fn poll_read(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-        buf: &mut [u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
+        buf: &mut ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
         self.project().stream.poll_read(cx, buf)
     }
 }
@@ -77,11 +77,11 @@ impl Write for AsyncNativeTlsStream {
         self.project().stream.poll_flush(cx)
     }
 
-    fn poll_close(
+    fn poll_shutdown(
         self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
-        self.project().stream.poll_close(cx)
+        self.project().stream.poll_shutdown(cx)
     }
 }
 
@@ -94,9 +94,5 @@ impl AsyncTlsStream for AsyncNativeTlsStream {
 
     fn mut_ref(&mut self) -> &mut Self::InnerStream {
         &mut self.stream
-    }
-
-    fn tcp_stream(self) -> TcpStream {
-        self.stream.get_ref().clone()
     }
 }

@@ -11,9 +11,9 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::string::String;
 use std::time::Duration;
 
-use async_std::io::prelude::BufReadExt;
-use async_std::io::{copy, BufReader, Read, Write, WriteExt};
-use async_std::net::{TcpListener, TcpStream, ToSocketAddrs};
+use tokio::io::AsyncBufReadExt;
+use tokio::io::{copy, BufReader, AsyncRead as Read, AsyncWrite as Write, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 // export
 pub use data_stream::DataStream;
@@ -67,8 +67,9 @@ where
     /// Try to connect to the remote server but with the specified timeout
     pub async fn connect_timeout(addr: SocketAddr, timeout: Duration) -> FtpResult<Self> {
         debug!("Connecting to server {addr}");
-        let stream = async_std::io::timeout(timeout, async move { TcpStream::connect(addr).await })
+        let stream = tokio::time::timeout(timeout, async move { TcpStream::connect(addr).await })
             .await
+            .map_err(|_| FtpError::ConnectionError(std::io::Error::new(std::io::ErrorKind::TimedOut, Box::<dyn std::error::Error + Send + Sync>::from(""))))?
             .map_err(FtpError::ConnectionError)?;
 
         Self::connect_with_stream(stream).await
@@ -129,10 +130,14 @@ where
         self.perform(Command::Auth).await?;
         self.read_response(Status::AuthOk).await?;
         debug!("TLS OK; initializing ssl stream");
+        let stream = match self.reader.into_inner() {
+            DataStream::Tcp(stream) => stream,
+            DataStream::Ssl(_) => return Err(FtpError::SecureError("Can't secure an already secure stream".into())),
+        };
         let stream = tls_connector
             .connect(
                 domain,
-                self.reader.into_inner().into_tcp_stream().to_owned(),
+                stream,
             )
             .await
             .map_err(|e| FtpError::SecureError(format!("{e}")))?;
@@ -273,6 +278,7 @@ where
     /// Perform clear command channel (CCC).
     /// Once the command is performed, the command channel will be encrypted no more.
     /// The data stream will still be secure.
+    /* 
     #[cfg(feature = "async-secure")]
     #[cfg_attr(docsrs, doc(cfg(feature = "async-secure")))]
     pub async fn clear_command_channel(mut self) -> FtpResult<Self> {
@@ -284,6 +290,7 @@ where
         self.reader = BufReader::new(DataStream::Tcp(self.reader.into_inner().into_tcp_stream()));
         Ok(self)
     }
+    */
 
     /// Change the current directory to the path specified.
     pub async fn cwd<S: AsRef<str>>(&mut self, path: S) -> FtpResult<()> {
@@ -1056,7 +1063,7 @@ mod test {
     }
     */
 
-    #[async_attributes::test]
+    #[tokio::test]
     #[serial]
     async fn should_change_mode() {
         crate::log_init();
@@ -1069,7 +1076,7 @@ mod test {
         assert_eq!(ftp_stream.mode, Mode::Passive);
     }
 
-    #[async_attributes::test]
+    #[tokio::test]
     #[cfg(feature = "with-containers")]
     #[serial]
     async fn should_connect_with_timeout() {
@@ -1085,7 +1092,7 @@ mod test {
         );
     }
 
-    #[async_attributes::test]
+    #[tokio::test]
     #[cfg(feature = "with-containers")]
     #[serial]
     async fn welcome_message() {
@@ -1098,7 +1105,7 @@ mod test {
         finalize_stream(stream).await;
     }
 
-    #[async_attributes::test]
+    #[tokio::test]
     #[cfg(feature = "with-containers")]
     #[serial]
     async fn should_set_passive_nat_workaround() {
@@ -1109,7 +1116,7 @@ mod test {
         finalize_stream(stream).await;
     }
 
-    #[async_attributes::test]
+    #[tokio::test]
     #[cfg(feature = "with-containers")]
     #[serial]
     async fn get_ref() {
@@ -1119,7 +1126,7 @@ mod test {
         finalize_stream(stream).await;
     }
 
-    #[async_attributes::test]
+    #[tokio::test]
     #[cfg(feature = "with-containers")]
     #[serial]
     async fn change_wrkdir() {
@@ -1132,7 +1139,7 @@ mod test {
         finalize_stream(stream).await;
     }
 
-    #[async_attributes::test]
+    #[tokio::test]
     #[cfg(feature = "with-containers")]
     #[serial]
     async fn cd_up() {
@@ -1145,7 +1152,7 @@ mod test {
         finalize_stream(stream).await;
     }
 
-    #[async_attributes::test]
+    #[tokio::test]
     #[cfg(feature = "with-containers")]
     #[serial]
     async fn noop() {
@@ -1155,7 +1162,7 @@ mod test {
         finalize_stream(stream).await;
     }
 
-    #[async_attributes::test]
+    #[tokio::test]
     #[cfg(feature = "with-containers")]
     #[serial]
     async fn make_and_remove_dir() {
@@ -1175,7 +1182,7 @@ mod test {
         finalize_stream(stream).await;
     }
 
-    #[async_attributes::test]
+    #[tokio::test]
     #[cfg(feature = "with-containers")]
     #[serial]
     async fn should_get_feat_and_set_opts() {
@@ -1187,7 +1194,7 @@ mod test {
         finalize_stream(stream).await;
     }
 
-    #[async_attributes::test]
+    #[tokio::test]
     #[cfg(feature = "with-containers")]
     #[serial]
     async fn set_transfer_type() {
@@ -1201,7 +1208,7 @@ mod test {
         finalize_stream(stream).await;
     }
 
-    #[async_attributes::test]
+    #[tokio::test]
     #[cfg(feature = "with-containers")]
     #[serial]
     async fn transfer_file() {
@@ -1254,7 +1261,7 @@ mod test {
         finalize_stream(stream).await;
     }
 
-    #[async_attributes::test]
+    #[tokio::test]
     #[serial]
     #[cfg(feature = "with-containers")]
     async fn should_resume_transfer() {
@@ -1306,7 +1313,7 @@ mod test {
         finalize_stream(stream).await;
     }
 
-    #[async_attributes::test]
+    #[tokio::test]
     #[serial]
     #[cfg(feature = "with-containers")]
     async fn should_transfer_file_with_extended_passive_mode() {

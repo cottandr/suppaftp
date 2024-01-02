@@ -4,10 +4,11 @@
 
 use std::pin::Pin;
 
+use tokio::io::ReadBuf;
 #[cfg(any(feature = "async", feature = "async-secure"))]
-use async_std::io::{Read, Result, Write};
+use tokio::io::{AsyncRead as Read, AsyncWrite as Write, Result};
 #[cfg(any(feature = "async", feature = "async-secure"))]
-use async_std::net::TcpStream;
+use tokio::net::TcpStream;
 use pin_project::pin_project;
 
 use super::AsyncTlsStream;
@@ -27,13 +28,6 @@ impl<T> DataStream<T>
 where
     T: AsyncTlsStream,
 {
-    /// Unwrap the stream into TcpStream. This method is only used in secure connection.
-    pub fn into_tcp_stream(self) -> TcpStream {
-        match self {
-            DataStream::Tcp(stream) => stream,
-            DataStream::Ssl(stream) => stream.get_ref().clone(),
-        }
-    }
 }
 
 impl<T> DataStream<T>
@@ -58,8 +52,8 @@ where
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-        buf: &mut [u8],
-    ) -> std::task::Poll<Result<usize>> {
+        buf: &mut ReadBuf<'_>,
+    ) -> std::task::Poll<Result<()>> {
         match self.project() {
             DataStreamProj::Tcp(stream) => stream.poll_read(cx, buf),
             DataStreamProj::Ssl(stream) => stream.poll_read(cx, buf),
@@ -92,13 +86,13 @@ where
         }
     }
 
-    fn poll_close(
+    fn poll_shutdown(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<()>> {
         match self.project() {
-            DataStreamProj::Tcp(stream) => stream.poll_close(cx),
-            DataStreamProj::Ssl(stream) => stream.poll_close(cx),
+            DataStreamProj::Tcp(stream) => stream.poll_shutdown(cx),
+            DataStreamProj::Ssl(stream) => stream.poll_shutdown(cx),
         }
     }
 }
